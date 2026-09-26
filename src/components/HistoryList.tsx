@@ -1,9 +1,8 @@
-import { Card, CardContent } from '@/lib/ui/Card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/lib/ui/Card';
 import { EmptyState } from '@/lib/ui/EmptyState';
 import { CenteredSpinner } from '@/lib/ui/Spinner';
 import { Alert, AlertTitle, AlertDescription } from '@/lib/ui/Alert';
 import { Button } from '@/lib/ui/Button';
-import { Badge } from '@/lib/ui/Badge';
 import { History, RefreshCw } from 'lucide-react';
 
 export interface TipCalculation {
@@ -21,72 +20,70 @@ function formatMoney(n: number): string {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function relTime(iso: string): string {
-  const s = Math.floor((Date.now() - Date.parse(iso)) / 1000);
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
+function formatWhen(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
-interface Props {
+interface HistoryListProps {
   items: TipCalculation[] | undefined;
   isLoading: boolean;
   error: Error | null;
   onRetry: () => void;
 }
 
-export function HistoryList({ items, isLoading, error, onRetry }: Props) {
+export function HistoryList({ items, isLoading, error, onRetry }: HistoryListProps) {
   return (
     <Card>
-      <CardContent className="space-y-1 p-0">
-        <div className="flex items-center justify-between px-6 pt-6">
-          <h2 className="text-h3">Recent calculations</h2>
-          <Button variant="ghost" size="sm" onClick={onRetry} aria-label="Refresh history">
-            <RefreshCw size={14} />
-          </Button>
-        </div>
-
+      <CardHeader>
+        <CardTitle>Recent calculations</CardTitle>
+        <CardDescription>Your last 25 saved splits.</CardDescription>
+      </CardHeader>
+      <CardContent className="p-0">
         {isLoading ? (
-          <div className="py-10">
+          <div className="py-12">
             <CenteredSpinner label="Loading history" />
           </div>
         ) : error ? (
-          <div className="px-6 pb-6 pt-2">
+          <div className="space-y-3 px-6 pb-6">
             <Alert variant="destructive">
               <AlertTitle>Couldn't load history</AlertTitle>
-              <AlertDescription className="space-y-3">
-                <p>{error.message}</p>
-                <Button size="sm" variant="outline" onClick={onRetry}>
-                  Try again
-                </Button>
-              </AlertDescription>
+              <AlertDescription>{error.message}</AlertDescription>
             </Alert>
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              <RefreshCw size={16} />
+              Retry
+            </Button>
           </div>
         ) : !items || items.length === 0 ? (
-          <div className="px-6 pb-6 pt-2">
+          <div className="px-6 pb-6">
             <EmptyState
               icon={<History size={20} />}
-              title="No calculations yet"
-              description="Save your first tip calculation above and it will show up here."
+              title="No saved calculations yet"
+              description="Save a calculation above and it will show up here."
             />
           </div>
         ) : (
           <ul className="divide-y divide-border">
             {items.map((item) => (
               <li key={item.id} className="flex items-center gap-4 px-6 py-3">
-                <Badge variant="outline" className="tabular-nums">
-                  {item.tip_percent}%
-                </Badge>
                 <div className="flex-1">
-                  <div className="text-body tabular-nums">${formatMoney(item.bill_amount)} bill</div>
-                  <div className="text-micro text-muted-foreground">
-                    {item.num_people} {item.num_people === 1 ? 'person' : 'people'} · {relTime(item.created_at)}
+                  <div className="text-body tabular-nums text-foreground">
+                    ${formatMoney(item.bill_amount)} bill · {item.tip_percent}% tip · {item.num_people}{' '}
+                    {item.num_people === 1 ? 'person' : 'people'}
                   </div>
+                  <div className="text-micro text-muted-foreground">{formatWhen(item.created_at)}</div>
                 </div>
                 <div className="text-right">
-                  <div className="text-body tabular-nums text-foreground">${formatMoney(item.per_person_amount)}</div>
-                  <div className="text-micro text-muted-foreground">per person</div>
+                  <div className="text-small tabular-nums text-foreground">${formatMoney(item.total_amount)} total</div>
+                  <div className="text-micro tabular-nums text-muted-foreground">
+                    ${formatMoney(item.per_person_amount)}/person
+                  </div>
                 </div>
               </li>
             ))}
