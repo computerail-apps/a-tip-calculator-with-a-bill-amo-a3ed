@@ -1,7 +1,7 @@
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/lib/ui/Card';
-import { EmptyState } from '@/lib/ui/EmptyState';
 import { CenteredSpinner } from '@/lib/ui/Spinner';
 import { Alert, AlertTitle, AlertDescription } from '@/lib/ui/Alert';
+import { EmptyState } from '@/lib/ui/EmptyState';
 import { Button } from '@/lib/ui/Button';
 import { History, RefreshCw } from 'lucide-react';
 
@@ -20,14 +20,12 @@ function formatMoney(n: number): string {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function formatWhen(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+function relTime(iso: string): string {
+  const s = Math.floor((Date.now() - Date.parse(iso)) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
 }
 
 interface HistoryListProps {
@@ -42,7 +40,7 @@ export function HistoryList({ items, isLoading, error, onRetry }: HistoryListPro
     <Card>
       <CardHeader>
         <CardTitle>Recent calculations</CardTitle>
-        <CardDescription>Your last 25 saved splits.</CardDescription>
+        <CardDescription>Your last 25 saved splits, most recent first.</CardDescription>
       </CardHeader>
       <CardContent className="p-0">
         {isLoading ? (
@@ -56,7 +54,7 @@ export function HistoryList({ items, isLoading, error, onRetry }: HistoryListPro
               <AlertDescription>{error.message}</AlertDescription>
             </Alert>
             <Button variant="outline" size="sm" onClick={onRetry}>
-              <RefreshCw size={16} />
+              <RefreshCw size={14} />
               Retry
             </Button>
           </div>
@@ -73,17 +71,15 @@ export function HistoryList({ items, isLoading, error, onRetry }: HistoryListPro
             {items.map((item) => (
               <li key={item.id} className="flex items-center gap-4 px-6 py-3">
                 <div className="flex-1">
-                  <div className="text-body tabular-nums text-foreground">
-                    ${formatMoney(item.bill_amount)} bill · {item.tip_percent}% tip · {item.num_people}{' '}
-                    {item.num_people === 1 ? 'person' : 'people'}
+                  <div className="text-body tabular-nums">
+                    ${formatMoney(item.bill_amount)}
+                    <span className="text-muted-foreground"> bill · {item.tip_percent}% tip · {item.num_people} {item.num_people === 1 ? 'person' : 'people'}</span>
                   </div>
-                  <div className="text-micro text-muted-foreground">{formatWhen(item.created_at)}</div>
+                  <div className="text-small text-muted-foreground">{relTime(item.created_at)}</div>
                 </div>
                 <div className="text-right">
-                  <div className="text-small tabular-nums text-foreground">${formatMoney(item.total_amount)} total</div>
-                  <div className="text-micro tabular-nums text-muted-foreground">
-                    ${formatMoney(item.per_person_amount)}/person
-                  </div>
+                  <div className="text-body tabular-nums text-foreground">${formatMoney(item.per_person_amount)}</div>
+                  <div className="text-micro text-muted-foreground">per person</div>
                 </div>
               </li>
             ))}
