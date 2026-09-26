@@ -1,76 +1,42 @@
 import { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/lib/ui/Card';
 import { Input } from '@/lib/ui/Input';
 import { Button } from '@/lib/ui/Button';
 import { Badge } from '@/lib/ui/Badge';
+import { Alert, AlertTitle, AlertDescription } from '@/lib/ui/Alert';
 import { DollarSign, Minus, Plus, Percent, Users, Save, Check } from 'lucide-react';
 import { HistoryList, type TipCalculation } from '@/components/HistoryList';
-import { useAppData } from '@/lib/data';
+import { ensureUser, supabase, TIP_CALCULATIONS_TABLE } from '@/lib/supabase';
 
 function formatMoney(n: number): string {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-const MOCK_HISTORY: TipCalculation[] = [
-  {
-    id: 'mock-1',
-    bill_amount: 84.5,
-    tip_percent: 20,
-    num_people: 3,
-    tip_amount: 16.9,
-    total_amount: 101.4,
-    per_person_amount: 33.8,
-    created_at: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
-  },
-  {
-    id: 'mock-2',
-    bill_amount: 42.0,
-    tip_percent: 15,
-    num_people: 2,
-    tip_amount: 6.3,
-    total_amount: 48.3,
-    per_person_amount: 24.15,
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
-  },
-  {
-    id: 'mock-3',
-    bill_amount: 156.75,
-    tip_percent: 18,
-    num_people: 4,
-    tip_amount: 28.215,
-    total_amount: 184.965,
-    per_person_amount: 46.24,
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 26).toISOString(),
-  },
-  {
-    id: 'mock-4',
-    bill_amount: 19.99,
-    tip_percent: 25,
-    num_people: 1,
-    tip_amount: 5.0,
-    total_amount: 24.99,
-    per_person_amount: 24.99,
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 72).toISOString(),
-  },
-];
-
 export function TipCalculator() {
   const [bill, setBill] = useState('64.00');
   const [tipPercent, setTipPercent] = useState(18);
   const [numPeople, setNumPeople] = useState(2);
-  const [localAdditions, setLocalAdditions] = useState<TipCalculation[]>([]);
   const [justSaved, setJustSaved] = useState(false);
+  const qc = useQueryClient();
 
   const {
     data: history,
     isLoading,
     error,
     refetch,
-  } = useAppData<TipCalculation[]>({
-    key: 'tip_calculations',
-    mock: MOCK_HISTORY,
-    fetchLive: async () => {
-      throw new Error('not wired yet');
+  } = useQuery({
+    queryKey: ['tip_calculations'],
+    queryFn: async () => {
+      const user = await ensureUser();
+      const { data, error } = await supabase
+        .from(TIP_CALCULATIONS_TABLE)
+        .select('id,bill_amount,tip_percent,num_people,tip_amount,total_amount,per_person_amount,created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(25);
+      if (error) throw error;
+      return (data ?? []) as TipCalculation[];
     },
   });
 
@@ -83,24 +49,26 @@ export function TipCalculator() {
   const totalAmount = billNum + tipAmount;
   const perPerson = numPeople > 0 ? totalAmount / numPeople : totalAmount;
 
-  const combinedHistory = [...localAdditions, ...(history ?? [])];
-
-  function handleSave() {
-    if (billNum <= 0) return;
-    const entry: TipCalculation = {
-      id: `local-${Date.now()}`,
-      bill_amount: billNum,
-      tip_percent: tipPercent,
-      num_people: numPeople,
-      tip_amount: tipAmount,
-      total_amount: totalAmount,
-      per_person_amount: perPerson,
-      created_at: new Date().toISOString(),
-    };
-    setLocalAdditions((prev) => [entry, ...prev]);
-    setJustSaved(true);
-    setTimeout(() => setJustSaved(false), 1800);
-  }
+  const save = useMutation({
+    mutationFn: async () => {
+      const user = await ensureUser();
+      const { error } = await supabase.from(TIP_CALCULATIONS_TABLE).insert({
+        user_id: user.id,
+        bill_amount: billNum,
+        tip_percent: tipPercent,
+        num_people: numPeople,
+        tip_amount: tipAmount,
+        total_amount: totalAmount,
+        per_person_amount: perPerson,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setJustSaved(true);
+      qc.invalidateQueries({ queryKey: ['tip_calculations'] });
+      setTimeout(() => setJustSaved(false), 1800);
+    },
+  });
 
   return (
     <div className="space-y-8">
@@ -191,16 +159,23 @@ export function TipCalculator() {
             <Result label="Total" value={totalAmount} />
             <Result label="Per person" value={perPerson} emphasize />
           </div>
+
+          {save.isError && (
+            <Alert variant="destructive">
+              <AlertTitle>Couldn't save calculation</AlertTitle>
+              <AlertDescription>{(save.error as Error).message}</AlertDescription>
+            </Alert>
+          )}
         </CardContent>
         <CardFooter className="justify-end">
-          <Button onClick={handleSave} disabled={billNum <= 0}>
+          <Button onClick={() => save.mutate()} disabled={billNum <= 0 || save.isPending}>
             {justSaved ? <Check size={16} /> : <Save size={16} />}
-            {justSaved ? 'Saved' : 'Save calculation'}
+            {justSaved ? 'Saved' : save.isPending ? 'Saving…' : 'Save calculation'}
           </Button>
         </CardFooter>
       </Card>
 
-      <HistoryList items={combinedHistory} isLoading={isLoading} error={error as Error | null} onRetry={refetch} />
+      <HistoryList items={history} isLoading={isLoading} error={error as Error | null} onRetry={refetch} />
     </div>
   );
 }
